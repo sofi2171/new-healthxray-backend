@@ -1,9 +1,9 @@
-require('dotenv').config();
+  require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const PDFDocument = require('pdfkit');
-const Deepseek = require("deepseek"); // Deepseek client
+const fetch = require('node-fetch'); // Deepseek API ke liye
 
 const app = express();
 
@@ -12,11 +12,6 @@ app.use(cors());
 app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
-
-// ===== Deepseek Client =====
-const deepseek = new Deepseek({
-  apiKey: process.env.DEEPSEEK_API_KEY
-});
 
 // ===== Health Check =====
 app.get("/", (req, res) => {
@@ -43,12 +38,20 @@ Condition - %
 `;
 
     // ===== Deepseek API Call =====
-    const completion = await deepseek.generate({
-      model: "deepseek-mini", // Replace with correct available model if needed
-      input: prompt
+    const response = await fetch("https://api.deepseek.ai/v1/generate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.DEEPSEEK_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: "deepseek-mini", // ya available model
+        input: prompt
+      })
     });
 
-    const diagnosisText = completion.output_text || "No result from Deepseek.";
+    const data = await response.json();
+    const diagnosisText = data.output_text || "No result from Deepseek.";
 
     // ===== Generate PDF =====
     const doc = new PDFDocument();
