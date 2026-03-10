@@ -1,4 +1,5 @@
 require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -12,28 +13,35 @@ app.use(bodyParser.json());
 const PORT = process.env.PORT || 3000;
 
 
+
 // ===== Home =====
 app.get("/", (req, res) => {
   res.send("HealthXRay Backend Running with Groq AI");
 });
 
 
+
 // ===== Test API Key =====
 app.get("/test-key", async (req, res) => {
+
   try {
 
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+
       method: "POST",
+
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${process.env.GROQ_API_KEY}`
       },
+
       body: JSON.stringify({
         model: "llama-3.3-70b-versatile",
         messages: [
           { role: "user", content: "Say hello" }
         ]
       })
+
     });
 
     const data = await response.json();
@@ -43,17 +51,22 @@ app.get("/test-key", async (req, res) => {
       groq_response: data
     });
 
-  } catch (err) {
+  }
+
+  catch (err) {
+
     res.status(500).json({
       status: "error",
       message: err.message
     });
+
   }
+
 });
 
 
 
-// ===== Check Symptoms =====
+// ===== Check Symptoms (Return JSON Result) =====
 app.post('/api/check-symptoms', async (req, res) => {
 
   try {
@@ -70,8 +83,8 @@ Age: ${age || "N/A"}
 Gender: ${gender || "N/A"}
 
 Suggest 5 possible medical conditions with probability.
-Format:
 
+Format:
 Condition - %
 `;
 
@@ -80,20 +93,21 @@ Condition - %
     try {
 
       const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+
         method: "POST",
+
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${process.env.GROQ_API_KEY}`
         },
+
         body: JSON.stringify({
           model: "llama-3.3-70b-versatile",
           messages: [
-            {
-              role: "user",
-              content: prompt
-            }
+            { role: "user", content: prompt }
           ]
         })
+
       });
 
       const data = await response.json();
@@ -104,46 +118,21 @@ Condition - %
         diagnosisText = data.choices[0].message.content;
       }
 
-    } catch (apiErr) {
+    }
+
+    catch (apiErr) {
 
       console.error("Groq error:", apiErr);
 
     }
 
-
-
-    // ===== Generate PDF =====
-
-    const doc = new PDFDocument();
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename=SymptomsReport.pdf');
-
-    doc.pipe(res);
-
-    doc.fontSize(20).text('HealthXRay - Symptoms Report', { underline: true });
-
-    doc.moveDown();
-
-    doc.fontSize(14).text(`Age: ${age || 'N/A'} | Gender: ${gender || 'N/A'}`);
-
-    doc.moveDown();
-
-    doc.text("Symptoms:");
-
-    symptoms.forEach((s, i) => {
-      doc.text(`${i + 1}. ${s}`);
+    // Return result for frontend
+    res.json({
+      age,
+      gender,
+      symptoms,
+      diagnosis: diagnosisText
     });
-
-    doc.moveDown();
-
-    doc.text("Possible Conditions:");
-
-    doc.moveDown();
-
-    doc.text(diagnosisText);
-
-    doc.end();
 
   }
 
@@ -157,6 +146,94 @@ Condition - %
 
   }
 
+});
+
+
+
+// ===== Generate PDF =====
+app.post("/api/generate-pdf", (req, res) => {
+
+  try {
+
+    const { symptoms, age, gender, diagnosis } = req.body;
+
+    const doc = new PDFDocument({ margin: 50 });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=HealthXRay_Report.pdf');
+
+    doc.pipe(res);
+
+    // Header
+    doc
+      .fontSize(24)
+      .fillColor("#0a7cff")
+      .text("HealthXRay Medical Report", { align: "center" });
+
+    doc.moveDown();
+
+    doc
+      .fontSize(12)
+      .fillColor("black")
+      .text(`Age: ${age || 'N/A'}`);
+
+    doc.text(`Gender: ${gender || 'N/A'}`);
+
+    doc.moveDown();
+
+    doc
+      .fontSize(16)
+      .fillColor("#0a7cff")
+      .text("Symptoms");
+
+    doc.moveDown(0.5);
+
+    symptoms.forEach((s, i) => {
+      doc.fontSize(12).fillColor("black").text(`${i + 1}. ${s}`);
+    });
+
+    doc.moveDown();
+
+    doc
+      .fontSize(16)
+      .fillColor("#0a7cff")
+      .text("Possible Conditions");
+
+    doc.moveDown(0.5);
+
+    doc
+      .fontSize(12)
+      .fillColor("black")
+      .text(diagnosis);
+
+    doc.moveDown();
+
+    doc
+      .fontSize(10)
+      .fillColor("gray")
+      .text("Disclaimer: This AI analysis is not a medical diagnosis. Please consult a doctor.", { align: "center" });
+
+    doc.end();
+
+  }
+
+  catch (err) {
+
+    console.error("PDF error:", err);
+
+    res.status(500).json({
+      error: "PDF generation failed"
+    });
+
+  }
+
+});
+
+
+
+// ===== Ping Route (Prevent Render Sleep) =====
+app.get("/ping", (req, res) => {
+  res.send("Server alive");
 });
 
 
