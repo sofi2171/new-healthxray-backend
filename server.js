@@ -1,3 +1,4 @@
+// server.js
 require('dotenv').config();
 
 const express = require('express');
@@ -13,72 +14,46 @@ app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
 
-
-
 // ===== Home =====
 app.get("/", (req, res) => {
   res.send("HealthXRay Backend Running with Groq AI");
 });
-
-
 
 // ===== Ping Route (Prevent Render Sleep) =====
 app.get("/ping", (req, res) => {
   res.send("Server alive");
 });
 
-
-
 // ===== Test API Key =====
 app.get("/test-key", async (req, res) => {
-
   try {
-
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-
       method: "POST",
-
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${process.env.GROQ_API_KEY}`
       },
-
       body: JSON.stringify({
         model: "llama-3.3-70b-versatile",
-        messages: [
-          { role: "user", content: "Say hello" }
-        ]
+        messages: [{ role: "user", content: "Say hello" }]
       })
-
     });
-
     const data = await response.json();
-
     res.json({
       status: "success",
       groq_response: data
     });
-
-  }
-
-  catch (err) {
-
+  } catch (err) {
     res.status(500).json({
       status: "error",
       message: err.message
     });
-
   }
-
 });
-
-
 
 // ===== AI Symptoms Analysis =====
 app.post('/api/check-symptoms', async (req, res) => {
-
   try {
-
     const { symptoms, age, gender } = req.body;
 
     if (!symptoms || symptoms.length === 0) {
@@ -99,23 +74,16 @@ Condition - %
     let diagnosisText = "AI response not available.";
 
     try {
-
       const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-
         method: "POST",
-
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${process.env.GROQ_API_KEY}`
         },
-
         body: JSON.stringify({
           model: "llama-3.3-70b-versatile",
-          messages: [
-            { role: "user", content: prompt }
-          ]
+          messages: [{ role: "user", content: prompt }]
         })
-
       });
 
       const data = await response.json();
@@ -123,13 +91,8 @@ Condition - %
       if (data.choices && data.choices[0]) {
         diagnosisText = data.choices[0].message.content;
       }
-
-    }
-
-    catch (apiErr) {
-
+    } catch (apiErr) {
       console.error("Groq error:", apiErr);
-
     }
 
     res.json({
@@ -138,149 +101,102 @@ Condition - %
       symptoms,
       diagnosis: diagnosisText
     });
-
-  }
-
-  catch (err) {
-
+  } catch (err) {
     console.error("Server error:", err);
-
-    res.status(500).json({
-      error: "Server Error"
-    });
-
+    res.status(500).json({ error: "Server Error" });
   }
-
 });
 
-
-
-// ===== Professional PDF Generator =====
+// ===== Professional PDF Generator (Multi-page, Header/Footer) =====
 app.post("/api/generate-pdf", (req, res) => {
-
   try {
-
     const { symptoms, age, gender, diagnosis } = req.body;
 
-    const doc = new PDFDocument({
-      size: "A4",
-      margin: 50
-    });
+    const doc = new PDFDocument({ size: "A4", margin: 50, autoFirstPage: false });
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader(
-      'Content-Disposition',
-      'attachment; filename=HealthXRay_Medical_Report.pdf'
-    );
+    res.setHeader('Content-Disposition', 'inline; filename=HealthXRay_Medical_Report.pdf');
 
     doc.pipe(res);
 
-
-    // ===== THEME COLORS =====
+    // Theme colors
     const primary = "#226653";
     const dark = "#1e2f4a";
     const light = "#8fc1b0";
 
+    // ===== Header Function =====
+    const addHeader = () => {
+      doc.rect(0, 0, 595, 70).fill(primary);
+      try { doc.image("favicon/favicon.png", 40, 18, { width: 35 }); } catch {}
+      doc.fillColor("white").fontSize(20).text("HealthXRay Medical Report", 90, 25);
+      doc.fontSize(10).text("AI Powered Health Analysis", 90, 45);
+      doc.moveDown(4);
+      doc.fillColor(dark);
+    };
 
-    // ===== HEADER =====
-    doc.rect(0, 0, 600, 70).fill(primary);
+    // ===== Footer Function =====
+    const addFooter = () => {
+      const bottom = doc.page.height - 50;
+      doc.strokeColor(light).moveTo(40, bottom).lineTo(555, bottom).stroke();
+      doc.fillColor("#555").fontSize(10).text("Contact: healthxray14@gmail.com", 40, bottom + 10);
+      doc.text("Website: https://healthxray.online", 350, bottom + 10);
+    };
 
-    try {
-      doc.image("favicon/favicon.png", 40, 18, { width: 35 });
-    } catch {}
+    // ===== Add First Page =====
+    doc.addPage();
+    addHeader();
 
-    doc
-      .fillColor("white")
-      .fontSize(20)
-      .text("HealthXRay Medical Report", 90, 25);
-
-    doc
-      .fontSize(10)
-      .text("AI Powered Health Analysis", 90, 45);
-
-
-
-    // ===== PATIENT INFO =====
-    doc.moveDown(4);
-
-    doc
-      .fillColor(dark)
-      .fontSize(16)
-      .text("Patient Information", { underline: true });
-
+    // Patient Info
+    doc.fontSize(16).text("Patient Information", { underline: true });
     doc.moveDown();
-
-    doc.fontSize(12);
-
-    doc.text(`Age: ${age || "N/A"}`);
+    doc.fontSize(12).text(`Age: ${age || "N/A"}`);
     doc.text(`Gender: ${gender || "N/A"}`);
-
-
-
-    // ===== SYMPTOMS TABLE =====
     doc.moveDown();
 
-    doc
-      .fontSize(16)
-      .fillColor(dark)
-      .text("Reported Symptoms", { underline: true });
-
+    // Symptoms Table
+    doc.fontSize(16).text("Reported Symptoms", { underline: true });
     doc.moveDown();
 
     let y = doc.y;
-
     doc.rect(40, y, 520, 20).fill(light);
-
     doc.fillColor("black");
-
     doc.text("No", 50, y + 5);
     doc.text("Symptom", 120, y + 5);
-
     y += 20;
 
     symptoms.forEach((s, i) => {
+      // Page break check
+      if (y + 40 > doc.page.height - 100) {
+        addFooter();
+        doc.addPage();
+        addHeader();
+        y = doc.y;
+        doc.rect(40, y, 520, 20).fill(light);
+        doc.fillColor("black");
+        doc.text("No", 50, y + 5);
+        doc.text("Symptom", 120, y + 5);
+        y += 20;
+      }
 
       doc.rect(40, y, 520, 20).stroke();
-
       doc.text(i + 1, 50, y + 5);
       doc.text(s, 120, y + 5);
-
       y += 20;
-
     });
 
-
-
-    // ===== DIAGNOSIS =====
     doc.moveDown(2);
 
-    doc
-      .fillColor(dark)
-      .fontSize(16)
-      .text("Possible Medical Conditions", { underline: true });
-
+    // Diagnosis
+    doc.fontSize(16).text("Possible Medical Conditions", { underline: true });
     doc.moveDown();
+    doc.fontSize(12).text(diagnosis);
 
-    doc
-      .fontSize(12)
-      .fillColor("black")
-      .text(diagnosis);
-
-
-
-    // ===== AI PRESCRIPTION =====
     doc.moveDown(2);
 
-    doc
-      .fontSize(16)
-      .fillColor(dark)
-      .text("AI Health Recommendations", { underline: true });
-
+    // AI Prescription
+    doc.fontSize(16).text("AI Health Recommendations", { underline: true });
     doc.moveDown();
-
-    doc.fontSize(12);
-
-    doc.list([
+    doc.fontSize(12).list([
       "Stay hydrated and drink plenty of water",
       "Get adequate rest and sleep",
       "Take mild pain relief medication if needed",
@@ -288,69 +204,29 @@ app.post("/api/generate-pdf", (req, res) => {
       "Consult a licensed doctor if symptoms persist"
     ]);
 
-
-
-    // ===== DISCLAIMER =====
     doc.moveDown(2);
 
-    doc
-      .fillColor("#a94442")
-      .fontSize(14)
-      .text("Medical Disclaimer", { underline: true });
-
+    // Disclaimer
+    doc.fillColor("#a94442").fontSize(14).text("Medical Disclaimer", { underline: true });
     doc.moveDown();
+    doc.fillColor(dark).fontSize(11).text(
+      "This AI generated report is for informational purposes only. " +
+      "It does not replace professional medical advice, diagnosis, or treatment. " +
+      "Always consult a qualified healthcare provider."
+    );
 
-    doc
-      .fillColor(dark)
-      .fontSize(11)
-      .text(
-        "This AI generated report is for informational purposes only. "+
-        "It does not replace professional medical advice, diagnosis, "+
-        "or treatment. Always consult a qualified healthcare provider."
-      );
-
-
-
-    // ===== FOOTER =====
-    doc.moveDown(4);
-
-    doc
-      .strokeColor(light)
-      .moveTo(40, 750)
-      .lineTo(550, 750)
-      .stroke();
-
-    doc
-      .fillColor("#555")
-      .fontSize(10)
-      .text("Contact: healthxray14@gmail.com", 40, 760);
-
-    doc
-      .text("Website: https://healthxray.online", 350, 760);
-
-
+    // Final Footer
+    addFooter();
 
     doc.end();
 
-  }
-
-  catch (err) {
-
+  } catch (err) {
     console.error("PDF error:", err);
-
-    res.status(500).json({
-      error: "PDF generation failed"
-    });
-
+    res.status(500).json({ error: "PDF generation failed" });
   }
-
 });
-
-
 
 // ===== Start Server =====
 app.listen(PORT, () => {
-
   console.log(`Server running on port ${PORT}`);
-
 });
