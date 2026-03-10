@@ -18,6 +18,42 @@ app.get("/", (req, res) => {
   res.send("HealthXRay Backend Running with Deepseek AI");
 });
 
+// ===== API Key Test Endpoint =====
+app.get("/test-key", async (req, res) => {
+  try {
+    const response = await fetch("https://api.deepseek.ai/v1/generate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.DEEPSEEK_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: "deepseek-mini",
+        input: "Test if API key works"
+      })
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      res.json({
+        status: "success",
+        deepseek_response: data
+      });
+    } else {
+      const text = await response.text();
+      res.status(response.status).json({
+        status: "error",
+        message: text
+      });
+    }
+  } catch (err) {
+    res.status(500).json({
+      status: "error",
+      message: err.message
+    });
+  }
+});
+
 // ===== Check Symptoms API =====
 app.post('/api/check-symptoms', async (req, res) => {
   try {
@@ -63,7 +99,8 @@ Condition - %
         else if (data.data && data.data.text) diagnosisText = data.data.text;
 
       } else {
-        console.error("Deepseek API error:", response.status, await response.text());
+        const text = await response.text();
+        console.error("Deepseek API error:", response.status, text);
       }
     } catch (apiErr) {
       console.error("Deepseek call failed:", apiErr);
