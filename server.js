@@ -1,4 +1,4 @@
-  require('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -22,6 +22,7 @@ app.get("/", (req, res) => {
 app.post('/api/check-symptoms', async (req, res) => {
   try {
     const { symptoms, age, gender } = req.body;
+    console.log("Request received:", req.body);
 
     if (!symptoms || symptoms.length === 0) {
       return res.status(400).json({ error: "No symptoms provided" });
@@ -38,20 +39,30 @@ Condition - %
 `;
 
     // ===== Deepseek API Call =====
-    const response = await fetch("https://api.deepseek.ai/v1/generate", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.DEEPSEEK_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: "deepseek-mini", // ya available model
-        input: prompt
-      })
-    });
+    let diagnosisText = "No result from Deepseek.";
+    try {
+      const response = await fetch("https://api.deepseek.ai/v1/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.DEEPSEEK_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: "deepseek-mini",
+          input: prompt
+        })
+      });
 
-    const data = await response.json();
-    const diagnosisText = data.output_text || "No result from Deepseek.";
+      if (response.ok) {
+        const data = await response.json();
+        diagnosisText = data.output_text || diagnosisText;
+        console.log("Deepseek response:", diagnosisText);
+      } else {
+        console.error("Deepseek API error:", response.status, await response.text());
+      }
+    } catch (apiErr) {
+      console.error("Deepseek call failed:", apiErr);
+    }
 
     // ===== Generate PDF =====
     const doc = new PDFDocument();
@@ -78,7 +89,7 @@ Condition - %
     doc.end();
 
   } catch (err) {
-    console.error(err);
+    console.error("Server error:", err);
     res.status(500).json({ error: "Server Error" });
   }
 });
