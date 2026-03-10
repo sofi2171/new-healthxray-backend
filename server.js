@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const PDFDocument = require('pdfkit');
-const fetch = require('node-fetch'); // Deepseek API ke liye
+const fetch = require('node-fetch');
 
 const app = express();
 
@@ -15,42 +15,33 @@ const PORT = process.env.PORT || 3000;
 
 // ===== Health Check =====
 app.get("/", (req, res) => {
-  res.send("HealthXRay Backend Running with Deepseek AI");
+  res.send("HealthXRay Backend Running with Groq AI");
 });
 
 // ===== API Key Test Endpoint =====
 app.get("/test-key", async (req, res) => {
   try {
-    const response = await fetch("https://api.deepseek.ai/v1/generate", {
+    const response = await fetch("https://api.groq.ai/v1/generate", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.DEEPSEEK_API_KEY}`
+        "Authorization": `Bearer ${process.env.GROQ_API_KEY}`
       },
       body: JSON.stringify({
-        model: "deepseek-mini",
+        model: "groq-mini",
         input: "Test if API key works"
       })
     });
 
     if (response.ok) {
       const data = await response.json();
-      res.json({
-        status: "success",
-        deepseek_response: data
-      });
+      res.json({ status: "success", groq_response: data });
     } else {
       const text = await response.text();
-      res.status(response.status).json({
-        status: "error",
-        message: text
-      });
+      res.status(response.status).json({ status: "error", message: text });
     }
   } catch (err) {
-    res.status(500).json({
-      status: "error",
-      message: err.message
-    });
+    res.status(500).json({ status: "error", message: err.message });
   }
 });
 
@@ -74,60 +65,50 @@ Format:
 Condition - %
 `;
 
-    // ===== Deepseek API Call =====
-    let diagnosisText = "No result from Deepseek.";
+    let diagnosisText = "No result from Groq AI.";
     try {
-      const response = await fetch("https://api.deepseek.ai/v1/generate", {
+      const response = await fetch("https://api.groq.ai/v1/generate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.DEEPSEEK_API_KEY}`
+          "Authorization": `Bearer ${process.env.GROQ_API_KEY}`
         },
         body: JSON.stringify({
-          model: "deepseek-mini",
+          model: "groq-mini",
           input: prompt
         })
       });
 
       if (response.ok) {
         const data = await response.json();
-        console.log("Deepseek raw response:", JSON.stringify(data, null, 2));
+        console.log("Groq raw response:", JSON.stringify(data, null, 2));
 
-        // Handle multiple possible response structures
         if (data.output_text) diagnosisText = data.output_text;
         else if (data.result && data.result[0] && data.result[0].text) diagnosisText = data.result[0].text;
-        else if (data.data && data.data.text) diagnosisText = data.data.text;
-
       } else {
         const text = await response.text();
-        console.error("Deepseek API error:", response.status, text);
+        console.error("Groq API error:", response.status, text);
       }
     } catch (apiErr) {
-      console.error("Deepseek call failed:", apiErr);
+      console.error("Groq call failed:", apiErr);
     }
 
     // ===== Generate PDF =====
     const doc = new PDFDocument();
-
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'attachment; filename=SymptomsReport.pdf');
-
     doc.pipe(res);
 
     doc.fontSize(20).text('HealthXRay - Symptoms Report', { underline: true });
     doc.moveDown();
-
     doc.fontSize(14).text(`Age: ${age || 'N/A'} | Gender: ${gender || 'N/A'}`);
     doc.moveDown();
-
     doc.text("Symptoms:");
     symptoms.forEach((s, i) => doc.text(`${i + 1}. ${s}`));
-
     doc.moveDown();
     doc.text("Possible Conditions:");
     doc.moveDown();
     doc.text(diagnosisText);
-
     doc.end();
 
   } catch (err) {
