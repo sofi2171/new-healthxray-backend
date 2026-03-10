@@ -6,6 +6,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const PDFDocument = require('pdfkit');
 const fetch = require('node-fetch');
+const Stripe = require("stripe");
 
 const app = express();
 
@@ -14,12 +15,15 @@ app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
 
+// ===== Initialize Stripe =====
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
 // ===== Home =====
 app.get("/", (req, res) => {
   res.send("HealthXRay Backend Running with Groq AI");
 });
 
-// ===== Ping Route (Prevent Render Sleep) =====
+// ===== Ping Route =====
 app.get("/ping", (req, res) => {
   res.send("Server alive");
 });
@@ -107,7 +111,7 @@ Condition - %
   }
 });
 
-// ===== Professional PDF Generator (Multi-page, Header/Footer) =====
+// ===== Professional PDF Generator =====
 app.post("/api/generate-pdf", (req, res) => {
   try {
     const { symptoms, age, gender, diagnosis } = req.body;
@@ -119,12 +123,10 @@ app.post("/api/generate-pdf", (req, res) => {
 
     doc.pipe(res);
 
-    // Theme colors
     const primary = "#226653";
     const dark = "#1e2f4a";
     const light = "#8fc1b0";
 
-    // ===== Header Function =====
     const addHeader = () => {
       doc.rect(0, 0, 595, 70).fill(primary);
       try { doc.image("favicon/favicon.png", 40, 18, { width: 35 }); } catch {}
@@ -134,7 +136,6 @@ app.post("/api/generate-pdf", (req, res) => {
       doc.fillColor(dark);
     };
 
-    // ===== Footer Function =====
     const addFooter = () => {
       const bottom = doc.page.height - 50;
       doc.strokeColor(light).moveTo(40, bottom).lineTo(555, bottom).stroke();
@@ -142,18 +143,15 @@ app.post("/api/generate-pdf", (req, res) => {
       doc.text("Website: https://healthxray.online", 350, bottom + 10);
     };
 
-    // ===== Add First Page =====
     doc.addPage();
     addHeader();
 
-    // Patient Info
     doc.fontSize(16).text("Patient Information", { underline: true });
     doc.moveDown();
     doc.fontSize(12).text(`Age: ${age || "N/A"}`);
     doc.text(`Gender: ${gender || "N/A"}`);
     doc.moveDown();
 
-    // Symptoms Table
     doc.fontSize(16).text("Reported Symptoms", { underline: true });
     doc.moveDown();
 
@@ -165,7 +163,6 @@ app.post("/api/generate-pdf", (req, res) => {
     y += 20;
 
     symptoms.forEach((s, i) => {
-      // Page break check
       if (y + 40 > doc.page.height - 100) {
         addFooter();
         doc.addPage();
@@ -185,15 +182,11 @@ app.post("/api/generate-pdf", (req, res) => {
     });
 
     doc.moveDown(2);
-
-    // Diagnosis
     doc.fontSize(16).text("Possible Medical Conditions", { underline: true });
     doc.moveDown();
     doc.fontSize(12).text(diagnosis);
 
     doc.moveDown(2);
-
-    // AI Prescription
     doc.fontSize(16).text("AI Health Recommendations", { underline: true });
     doc.moveDown();
     doc.fontSize(12).list([
@@ -205,8 +198,6 @@ app.post("/api/generate-pdf", (req, res) => {
     ]);
 
     doc.moveDown(2);
-
-    // Disclaimer
     doc.fillColor("#a94442").fontSize(14).text("Medical Disclaimer", { underline: true });
     doc.moveDown();
     doc.fillColor(dark).fontSize(11).text(
@@ -215,15 +206,78 @@ app.post("/api/generate-pdf", (req, res) => {
       "Always consult a qualified healthcare provider."
     );
 
-    // Final Footer
     addFooter();
-
     doc.end();
 
   } catch (err) {
     console.error("PDF error:", err);
     res.status(500).json({ error: "PDF generation failed" });
   }
+});
+
+// ===== ===== New Subscription + Stripe Payment API ===== =====
+
+const packages = [
+  { id: 1, name: "Basic Plan", price: 500 },
+  { id: 2, name: "Standard Plan", price: 1000 },
+  { id: 3, name: "Premium Plan", price: 2000 }
+];
+
+app.post("/api/subscribe", async (req, res) => {
+  try {
+    const { email, packageId } = req.body;
+
+    if (!email || !packageId) {
+      return res.status(400).json({ error: "Email and packageId are required" });
+    }
+
+    const selectedPackage = packages.find(p => p.id === packageId);
+    if (!selectedPackage) {
+      return res.status(404).json({ error: "Package not found" });
+    }
+
+    // ===== Stripe Payment Intent =====
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: selectedPackage.price,
+      currency: "usd",
+      receipt_email: email,
+      metadata: {
+        packageId: selectedPackage.id.toString(),
+        packageName: selectedPackage.name
+      }
+    });
+
+    res.json({
+      success: true,
+      message: `Subscription created for ${email}`,
+      package: selectedPackage,
+      clientSecret: paymentIntent.client_secret
+    });
+
+  } catch (err) {
+    console.error("Stripe subscribe error:", err);
+    res.status(500).json({ error: "Subscription failed" });
+  }
+});
+
+// ===== Optional Stripe Webhook =====
+app.post("/webhook", express.raw({ type: 'application/json' }), (req, res) => {
+  const sig = req.headers["stripe-signature"];
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  if (event.type === "payment_intent.succeeded") {
+    const paymentIntent = event.data.object;
+    console.log("Payment succeeded for:", paymentIntent.metadata.packageName);
+    // TODO: Update subscription status in DB
+  }
+
+  res.json({ received: true });
 });
 
 // ===== Start Server =====
