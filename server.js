@@ -21,7 +21,7 @@ app.get("/", (req, res) => {
 // ===== API Key Test Endpoint =====
 app.get("/test-key", async (req, res) => {
   try {
-    const response = await fetch("https://api.groq.ai/v1/generate", {
+    const response = await fetch("https://api.groq.cloud/v1/generate", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -67,7 +67,7 @@ Condition - %
 
     let diagnosisText = "No result from Groq AI.";
     try {
-      const response = await fetch("https://api.groq.ai/v1/generate", {
+      const response = await fetch("https://api.groq.cloud/v1/generate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -83,8 +83,11 @@ Condition - %
         const data = await response.json();
         console.log("Groq raw response:", JSON.stringify(data, null, 2));
 
+        // Multiple possible response structures
         if (data.output_text) diagnosisText = data.output_text;
         else if (data.result && data.result[0] && data.result[0].text) diagnosisText = data.result[0].text;
+        else if (data.data && data.data.text) diagnosisText = data.data.text;
+
       } else {
         const text = await response.text();
         console.error("Groq API error:", response.status, text);
