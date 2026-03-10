@@ -55,8 +55,13 @@ Condition - %
 
       if (response.ok) {
         const data = await response.json();
-        diagnosisText = data.output_text || diagnosisText;
-        console.log("Deepseek response:", diagnosisText);
+        console.log("Deepseek raw response:", JSON.stringify(data, null, 2));
+
+        // Handle multiple possible response structures
+        if (data.output_text) diagnosisText = data.output_text;
+        else if (data.result && data.result[0] && data.result[0].text) diagnosisText = data.result[0].text;
+        else if (data.data && data.data.text) diagnosisText = data.data.text;
+
       } else {
         console.error("Deepseek API error:", response.status, await response.text());
       }
