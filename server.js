@@ -217,46 +217,52 @@ app.post("/api/generate-pdf", (req, res) => {
 
 // ===== ===== New Subscription + Stripe Payment API ===== =====
 
-const packages = [
-  { id: 1, name: "Basic Plan", price: 500 },
-  { id: 2, name: "Standard Plan", price: 1000 },
-  { id: 3, name: "Premium Plan", price: 2000 }
-];
-
 app.post("/api/subscribe", async (req, res) => {
   try {
-    const { email, packageId } = req.body;
 
-    if (!email || !packageId) {
-      return res.status(400).json({ error: "Email and packageId are required" });
+    const { packageName, packagePrice } = req.body;
+
+    if (!packageName || !packagePrice) {
+      return res.status(400).json({ error: "Package info missing" });
     }
 
-    const selectedPackage = packages.find(p => p.id === packageId);
-    if (!selectedPackage) {
-      return res.status(404).json({ error: "Package not found" });
-    }
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
 
-    // ===== Stripe Payment Intent =====
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: selectedPackage.price,
-      currency: "usd",
-      receipt_email: email,
-      metadata: {
-        packageId: selectedPackage.id.toString(),
-        packageName: selectedPackage.name
-      }
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: packageName
+            },
+            unit_amount: Math.round(packagePrice * 100)
+          },
+          quantity: 1
+        }
+      ],
+
+      mode: "payment",
+
+      success_url: "https://healthxray.online/success.html",
+
+      cancel_url: "https://healthxray.online/cancel.html"
     });
 
     res.json({
       success: true,
-      message: `Subscription created for ${email}`,
-      package: selectedPackage,
-      clientSecret: paymentIntent.client_secret
+      paymentUrl: session.url
     });
 
   } catch (err) {
-    console.error("Stripe subscribe error:", err);
-    res.status(500).json({ error: "Subscription failed" });
+
+    console.error("Stripe error:", err);
+
+    res.status(500).json({
+      success: false,
+      error: "Payment creation failed"
+    });
+
   }
 });
 
