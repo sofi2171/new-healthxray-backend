@@ -3,29 +3,29 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const PDFDocument = require('pdfkit');
-const OpenAI = require("openai");
+const Deepseek = require("deepseek"); // Deepseek client
 
 const app = express();
 
+// ===== Middleware =====
 app.use(cors());
 app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+// ===== Deepseek Client =====
+const deepseek = new Deepseek({
+  apiKey: process.env.DEEPSEEK_API_KEY
 });
 
-// Health check route (Render ke liye zaroori)
-app.get("/", (req,res)=>{
-  res.send("HealthXRay Backend Running");
+// ===== Health Check =====
+app.get("/", (req, res) => {
+  res.send("HealthXRay Backend Running with Deepseek AI");
 });
 
-// ===== API Route =====
+// ===== Check Symptoms API =====
 app.post('/api/check-symptoms', async (req, res) => {
-
   try {
-
     const { symptoms, age, gender } = req.body;
 
     if (!symptoms || symptoms.length === 0) {
@@ -33,21 +33,22 @@ app.post('/api/check-symptoms', async (req, res) => {
     }
 
     const prompt = `
-    Patient symptoms: ${symptoms.join(", ")}
-    Age: ${age || "N/A"}
-    Gender: ${gender || "N/A"}
+Patient symptoms: ${symptoms.join(", ")}
+Age: ${age || "N/A"}
+Gender: ${gender || "N/A"}
 
-    Suggest 5 possible medical conditions with probability.
-    Format:
-    Condition - %
-    `;
+Suggest 5 possible medical conditions with probability.
+Format:
+Condition - %
+`;
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }]
+    // ===== Deepseek API Call =====
+    const completion = await deepseek.generate({
+      model: "deepseek-mini", // Replace with correct available model if needed
+      input: prompt
     });
 
-    const diagnosisText = completion.choices[0].message.content;
+    const diagnosisText = completion.output_text || "No result from Deepseek.";
 
     // ===== Generate PDF =====
     const doc = new PDFDocument();
@@ -64,7 +65,7 @@ app.post('/api/check-symptoms', async (req, res) => {
     doc.moveDown();
 
     doc.text("Symptoms:");
-    symptoms.forEach((s,i)=> doc.text(`${i+1}. ${s}`));
+    symptoms.forEach((s, i) => doc.text(`${i + 1}. ${s}`));
 
     doc.moveDown();
     doc.text("Possible Conditions:");
@@ -74,14 +75,12 @@ app.post('/api/check-symptoms', async (req, res) => {
     doc.end();
 
   } catch (err) {
-
     console.error(err);
     res.status(500).json({ error: "Server Error" });
-
   }
-
 });
 
+// ===== Start Server =====
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
