@@ -1,148 +1,111 @@
-
-require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const bodyParser = require('body-parser');
 const PDFDocument = require('pdfkit');
-const fetch = require('node-fetch');
-const Stripe = require("stripe");
+// Agar aap Google Gemini ya OpenAI use kar rahe hain toh uska package yahan aayega
+// const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 
-// ===== 1. Multiple API Keys for Failover =====
-const GROQ_KEYS = [
-    process.env.GROQ_API_KEY_1,
-    process.env.GROQ_API_KEY_2,
-    process.env.GROQ_API_KEY_3,
-    process.env.GROQ_API_KEY_4,
-    process.env.GROQ_API_KEY_5
-];
-
-// Helper Function to call Groq with Auto-Retry (Failover)
-async function callGroqAI(prompt) {
-    for (let i = 0; i < GROQ_KEYS.length; i++) {
-        try {
-            const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${GROQ_KEYS[i]}`
-                },
-                body: JSON.stringify({
-                    model: "llama-3.3-70b-versatile",
-                    messages: [
-                        { 
-                            role: "system", 
-                            content: "You are a professional medical assistant. You understand English, Urdu, and Hindi. Analyze symptoms and provide a detailed clinical report in English." 
-                        },
-                        { role: "user", content: prompt }
-                    ],
-                    temperature: 0.5
-                })
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                return data.choices[0].message.content;
-            }
-            console.warn(`Key ${i+1} failed, trying next...`);
-        } catch (err) {
-            console.error(`Error with Key ${i+1}:`, err.message);
-        }
-    }
-    throw new Error("All Groq API Keys failed.");
-}
-
-// ===== 2. AI Symptoms Analysis (Updated Prompt) =====
+// --- 1. AI Analysis Route ---
 app.post('/api/check-symptoms', async (req, res) => {
+    const { age, gender, symptoms, description } = req.body;
+
+    // AI ko instruction dena ke wo patient ka prompt (Urdu/English) samjhay
+    const prompt = `
+        You are a highly professional medical AI assistant. 
+        Analyze the following patient data:
+        Age: ${age}
+        Gender: ${gender}
+        Selected Symptoms: ${symptoms.join(', ')}
+        Patient's Personal Note: "${description}"
+
+        Instructions:
+        1. If the patient wrote the note in Urdu/Hindi, respond in that language if requested, but keep the structure professional.
+        2. Provide Potential Causes, Recommended Actions, and Urgency Level.
+        3. Use a clinical and empathetic tone.
+        4. Do NOT use markdown stars (**) in the final JSON response string.
+    `;
+
     try {
-        const { symptoms, age, gender, description } = req.body;
+        // Yahan AI Model call karein (Example text)
+        // const result = await model.generateContent(prompt);
+        // const aiResponse = result.response.text();
+        
+        const aiResponse = "Based on your symptoms of " + symptoms.join(', ') + ", you might be experiencing a common viral infection. Please rest and hydrate. " + (description ? "Regarding your note: " + description : "");
 
-        const aiPrompt = `
-        ACT AS A MEDICAL DIAGNOSTIC AI.
-        PATIENT DATA:
-        - Age: ${age}
-        - Gender: ${gender}
-        - Selected Symptoms: ${symptoms.join(", ")}
-        - Patient's Own Words: "${description || "None"}"
-
-        TASK:
-        1. Analyze the symptoms and the patient's description (it might be in Urdu/Hindi).
-        2. Provide 3-5 possible conditions with confidence percentages.
-        3. Give professional medical advice and urgency level.
-        4. Provide the output in a clean, professional structured format.
-        `;
-
-        const diagnosis = await callGroqAI(aiPrompt);
-
-        res.json({
-            status: "success",
-            diagnosis: diagnosis,
-            age,
-            gender,
-            symptoms
-        });
-    } catch (err) {
-        res.status(500).json({ error: "AI Analysis Failed: " + err.message });
+        res.json({ diagnosis: aiResponse });
+    } catch (error) {
+        console.error("AI Error:", error);
+        res.status(500).json({ error: "AI Analysis Failed" });
     }
 });
 
-// ===== 3. Professional PDF Generator =====
-app.post("/api/generate-pdf", (req, res) => {
-    try {
-        const { symptoms, age, gender, diagnosis, description } = req.body;
-        const doc = new PDFDocument({ size: "A4", margin: 50 });
+// --- 2. Professional PDF Generation Route ---
+app.post('/api/generate-pdf', (req, res) => {
+    const { age, gender, symptoms, description, diagnosis } = req.body;
 
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', 'attachment; filename=HealthXRay_Report.pdf');
-        doc.pipe(res);
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
 
-        // Styling Colors
-        const primaryColor = "#226653";
-        const secondaryColor = "#1e2f4a";
+    // Stream the PDF
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=HealthXray_Report.pdf');
+    doc.pipe(res);
 
-        // Header
-        doc.rect(0, 0, 600, 80).fill(primaryColor);
-        doc.fillColor("#ffffff").fontSize(24).text("HealthXRay AI", 50, 25);
-        doc.fontSize(10).text("Clinical Triage Report | www.healthxray.online", 50, 55);
+    // --- PROFESSIONAL HEADER ---
+    doc.rect(0, 0, 612, 100).fill('#226653');
+    doc.fillColor('#ffffff').fontSize(26).text('HealthXray AI', 50, 35);
+    doc.fontSize(10).text('Digital Clinical Assessment Report', 50, 68);
+    doc.text(`Date: ${new Date().toLocaleDateString()}`, 450, 45);
 
-        doc.moveDown(4);
-        doc.fillColor(secondaryColor).fontSize(16).text("Patient Summary", { underline: true });
-        doc.fontSize(12).text(`Age: ${age} | Gender: ${gender}`, 50, 120);
+    doc.moveDown(5);
+
+    // --- PATIENT DETAILS TABLE ---
+    doc.fillColor('#1e2f4a').fontSize(14).text('Patient Information', 50, 120);
+    
+    // Table Box
+    doc.rect(50, 140, 500, 70).stroke('#e2e8f0');
+    doc.fillColor('#333').fontSize(11);
+    doc.text(`Age: ${age}`, 70, 155);
+    doc.text(`Gender: ${gender}`, 200, 155);
+    doc.text(`Symptoms: ${symptoms.join(', ')}`, 70, 180, { width: 460 });
+
+    // --- CLINICAL ANALYSIS SECTION ---
+    doc.moveDown(5);
+    doc.fillColor('#226653').fontSize(14).text('AI Diagnostic Insights', { underline: true });
+    doc.moveDown();
+    
+    // Content Alignment
+    doc.fillColor('#2c3e50').fontSize(11).text(diagnosis, {
+        align: 'justify',
+        lineGap: 5
+    });
+
+    if (description) {
         doc.moveDown();
-
-        doc.fontSize(14).text("Selected Symptoms:");
-        doc.fontSize(11).text(symptoms.join(", ") || "No specific tags selected");
-        
-        if (description) {
-            doc.moveDown().fontSize(14).text("Patient Narrative:");
-            doc.fontSize(11).fillColor("#444").text(`"${description}"`);
-        }
-
-        doc.moveDown(2);
-        doc.rect(45, doc.y, 500, 2).fill(primaryColor);
-        doc.moveDown();
-
-        doc.fillColor(secondaryColor).fontSize(16).text("AI Clinical Analysis", { underline: true });
-        doc.moveDown();
-        doc.fillColor("#000").fontSize(11).text(diagnosis, { align: 'justify' });
-
-        // Footer & Disclaimer
-        const footerY = doc.page.height - 100;
-        doc.fontSize(8).fillColor("red").text("DISCLAIMER: This is an AI-generated report for informational purposes only. Consult a doctor immediately for medical emergencies.", 50, footerY, { align: 'center' });
-        
-        doc.end();
-    } catch (err) {
-        res.status(500).send("PDF Generation Error");
+        doc.fillColor('#64748b').fontSize(10).text(`Patient's Additional Note: ${description}`, { italic: true });
     }
+
+    // --- PROFESSIONAL FOOTER ---
+    const bottomY = 750;
+    doc.rect(0, 780, 612, 62).fill('#f8fafc');
+    
+    doc.fillColor('#226653').fontSize(10).text('HealthXray - Powered by Advanced AI', 50, 795);
+    doc.fillColor('#64748b').fontSize(9);
+    doc.text('Email: healthxray14@gmail.com', 50, 810);
+    doc.text('Web: https://healthxray.online', 50, 822);
+    
+    doc.fillColor('#ef4444').fontSize(8).text(
+        'DISCLAIMER: This report is generated by AI and is for informational purposes only. It is not a substitute for professional medical advice, diagnosis, or treatment.', 
+        280, 795, { width: 280, align: 'right' }
+    );
+
+    doc.end();
 });
 
-// (Stripe code remains same as your previous version)
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-app.post("/api/subscribe", async (req, res) => { /* Your Stripe Logic */ });
-
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+    console.log(`HealthXray Server running on port ${PORT}`);
+});
