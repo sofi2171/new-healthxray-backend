@@ -3,12 +3,13 @@ const express = require('express');
 const cors = require('cors');
 const PDFDocument = require('pdfkit-table');
 const Groq = require('groq-sdk');
+const path = require('path');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// --- 1. 5-KEY AUTOMATIC FAILOVER SYSTEM ---
+// --- 1. 5-KEY AUTO FAILOVER SYSTEM ---
 const API_KEYS = [
     process.env.GROQ_API_KEY_1,
     process.env.GROQ_API_KEY_2,
@@ -18,46 +19,40 @@ const API_KEYS = [
 ].filter(key => key);
 
 async function callGroqWithFailover(prompt, keyIndex = 0) {
-    if (keyIndex >= API_KEYS.length) {
-        console.error("❌ [CRITICAL] All API keys failed or exhausted.");
-        throw new Error("All AI nodes are currently busy. Please try again in 1-2 minutes.");
-    }
-
+    if (keyIndex >= API_KEYS.length) throw new Error("Tamam AI nodes busy hain.");
     try {
-        console.log(`🚀 [LOG] Analysis Attempt with Key #${keyIndex + 1}...`);
         const groq = new Groq({ apiKey: API_KEYS[keyIndex] });
-        
         const chatCompletion = await groq.chat.completions.create({
             messages: [{ role: "user", content: prompt }],
             model: "llama-3.3-70b-versatile",
-            temperature: 0.2, // Higher accuracy
-            max_tokens: 1200,
+            temperature: 0.2,
         });
-
-        console.log(`✅ [SUCCESS] Result obtained from Key #${keyIndex + 1}`);
-        // Clean markdown stars (**) for professional clinical display
+        // Filtering: Stars (**) aur Markdown remove karna
         return chatCompletion.choices[0]?.message?.content.replace(/\*\*/g, '') || "";
     } catch (error) {
-        console.warn(`⚠️ [RETRY] Key #${keyIndex + 1} Error: ${error.message}. Switching to next key...`);
+        console.log(`Key ${keyIndex + 1} failed, switching...`);
         return callGroqWithFailover(prompt, keyIndex + 1);
     }
 }
 
-// --- 2. AI ANALYSIS ROUTE (With Data Filtering) ---
+// --- 2. SMART ANALYSIS ROUTE ---
 app.post('/api/check-symptoms', async (req, res) => {
     const { age, gender, symptoms, description } = req.body;
-    console.log(`📩 [INCOMING] New Analysis Request for ${age}yr ${gender}`);
-
+    
+    // AI ko sakht hidayat taake data hamesha filter ho kar aaye
     const prompt = `
-        Act as a Senior Clinical Expert. 
-        Patient Info: Age ${age}, Gender ${gender}, Symptoms: ${symptoms.join(', ')}.
-        Note: "${description}"
+        Act as a Senior Clinical Expert.
+        Analyze: Age ${age}, Gender ${gender}, Symptoms: ${symptoms.join(', ')}.
+        User Input: "${description}"
         
-        Instructions:
-        1. List 5 Possible Medical Conditions with probabilities (%).
-        2. Provide exactly 5 AI Health Recommendations in bullet points.
-        3. Professional Urgency Level.
-        4. STRICT: No markdown stars (**). Use clean professional plain text only.
+        STRICT RULES:
+        1. If user input is in Urdu, provide the 'Clinical Advice' and 'Recommendations' in Urdu.
+        2. Use plain professional text. NO markdown stars (**).
+        3. Structure: 
+           - Possible Conditions (with %)
+           - Professional Advice
+           - Next Steps
+           - Urgency Level
     `;
 
     try {
@@ -68,85 +63,87 @@ app.post('/api/check-symptoms', async (req, res) => {
     }
 });
 
-// --- 3. PROFESSIONAL PDF GENERATOR (Auto-Fitting & Repeat Header/Footer) ---
+// --- 3. PRO PDF GENERATOR (Urdu & English Compatible) ---
 app.post('/api/generate-pdf', async (req, res) => {
-    console.log("📄 [LOG] Generating Multi-Page Professional PDF...");
     const { age, gender, symptoms, diagnosis } = req.body;
     
-    // bufferPages: true allows us to add headers/footers to all pages after generation
+    // Check if diagnosis contains Urdu characters
+    const isUrdu = /[\u0600-\u06FF]/.test(diagnosis);
+    
     const doc = new PDFDocument({ margin: 50, size: 'A4', bufferPages: true });
     res.setHeader('Content-Type', 'application/pdf');
     doc.pipe(res);
 
-    // Reusable Header Helper
+    // --- Font Registration (Zaroori: Urdu ke liye) ---
+    // Note: Aapko apne server par ek Urdu font file (e.g., JameelNoori.ttf) rakhni hogi
+    // doc.registerFont('UrduFont', path.join(__dirname, 'fonts', 'JameelNoori.ttf'));
+
     const drawHeader = () => {
-        doc.rect(0, 0, 612, 90).fill('#226653'); 
+        doc.rect(0, 0, 612, 90).fill('#226653');
         doc.fillColor('#ffffff').fontSize(22).font('Helvetica-Bold').text('HealthXRay Medical Report', 50, 30);
-        doc.fontSize(10).font('Helvetica').text('AI Powered Clinical Assessment | www.healthxray.online', 50, 58);
+        doc.fontSize(10).font('Helvetica').text('AI-Powered Clinical Analysis', 50, 58);
     };
 
-    // Reusable Footer Helper
-    const drawFooter = (pageNum, totalPages) => {
+    const drawFooter = (p, t) => {
         doc.moveTo(50, 770).lineTo(562, 770).stroke('#e2e8f0');
-        doc.fillColor('#64748b').fontSize(8);
-        doc.text('Contact: healthxray14@gmail.com', 50, 780);
-        doc.text(`Page ${pageNum} of ${totalPages}`, 0, 780, { align: 'center', width: 612 });
-        doc.text('https://healthxray.online', 400, 780, { align: 'right' });
+        doc.fillColor('#64748b').fontSize(8).font('Helvetica').text(`Page ${p} of ${t}`, 0, 780, { align: 'center', width: 612 });
     };
 
-    // --- Page 1 Content ---
     drawHeader();
     doc.moveDown(5);
 
-    // Patient Info Section
-    doc.fillColor('#1e2f4a').fontSize(13).font('Helvetica-Bold').text('Patient Information');
-    doc.rect(50, doc.y + 2, 512, 1).fill('#1e2f4a'); // Professional lining
-    doc.moveDown(1);
-    doc.fillColor('#333').fontSize(10).font('Helvetica').text(`Age: ${age} Years | Gender: ${gender.toUpperCase()}`);
+    // Patient Info Table
+    doc.fillColor('#1e2f4a').fontSize(14).font('Helvetica-Bold').text(isUrdu ? 'مریض کی معلومات (Patient Info)' : 'Patient Information');
+    doc.rect(50, doc.y + 2, 512, 1).fill('#1e2f4a').moveDown(1);
+    
+    doc.fillColor('#333').fontSize(11).font('Helvetica')
+       .text(`Age: ${age} | Gender: ${gender.toUpperCase()}`);
+    
     doc.moveDown(2);
 
-    // Symptoms Table (Exact Presentation)
+    // Symptoms Table
     const table = {
         headers: [
-            { label: "No", property: 'id', width: 40 },
-            { label: "Reported Symptom", property: 'name', width: 472 }
+            { label: isUrdu ? "نمبر" : "No", property: 'id', width: 40 },
+            { label: isUrdu ? "علامات (Symptoms)" : "Symptoms", property: 'name', width: 472 }
         ],
         rows: symptoms.map((s, i) => [(i + 1).toString(), s.toUpperCase()])
     };
 
-    await doc.table(table, { 
-        prepareHeader: () => doc.fontSize(10).fillColor('#1e2f4a').font('Helvetica-Bold'),
-        prepareRow: () => doc.fontSize(10).fillColor('#333')
+    await doc.table(table, {
+        prepareHeader: () => doc.fontSize(10).font('Helvetica-Bold').fillColor('#1e2f4a'),
+        prepareRow: () => doc.fontSize(10).font('Helvetica').fillColor('#333')
     });
 
     doc.moveDown(2);
 
-    // Clinical Advice Section
-    doc.fillColor('#226653').fontSize(13).font('Helvetica-Bold').text('Clinical Assessment & Recommendations');
-    doc.rect(50, doc.y + 2, 512, 1).fill('#226653');
-    doc.moveDown(1.5);
+    // AI Assessment (Clinical Section)
+    doc.fillColor('#226653').fontSize(14).font('Helvetica-Bold').text(isUrdu ? 'طبی تجزیہ (Clinical Analysis)' : 'Clinical Analysis');
+    doc.rect(50, doc.y + 2, 512, 1.5).fill('#226653').moveDown(1.5);
 
-    // Smart Text Fitting: Prevents text from being squeezed or cut
-    doc.fillColor('#333').fontSize(10).font('Helvetica').text(diagnosis, {
-        align: 'justify',
-        lineGap: 4,
-        paragraphGap: 10,
-        width: 512
-    });
+    // Urdu handling: Agar Urdu hai toh right-to-left alignment aur font change
+    const textOptions = {
+        width: 512,
+        align: isUrdu ? 'right' : 'justify',
+        lineGap: 5,
+        features: isUrdu ? ['rtla'] : []
+    };
 
-    // --- Final Step: Footer & Header Injection on all pages ---
+    // Agar aapne Urdu font register kiya hai toh use yahan apply karein:
+    // if(isUrdu) doc.font('UrduFont'); else doc.font('Helvetica');
+
+    doc.fillColor('#333').fontSize(11).text(diagnosis, textOptions);
+
+    // Apply Header/Footer to all pages
     const range = doc.bufferedPageRange();
     for (let i = range.start; i < range.count; i++) {
         doc.switchToPage(i);
-        if (i > 0) drawHeader(); // Only repeat header if it's a new page
+        if (i > 0) drawHeader();
         drawFooter(i + 1, range.count);
     }
 
     doc.end();
-    console.log("✅ [SUCCESS] Corrected PDF Sent to Client.");
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-    console.log(`🏥 HealthXray Server Live on Port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Backend Active on ${PORT}`));
