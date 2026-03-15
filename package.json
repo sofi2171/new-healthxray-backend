@@ -1,28 +1,17 @@
 {
   "name": "healthxray-backend",
   "version": "1.1.0",
-  "description": "HealthXRay AI - Professional Clinical Triage & PDF Reports",
+  "description": "HealthXRay AI - Professional Clinical Triage",
   "main": "server.js",
-  "type": "commonjs",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
-  },
-  "engines": {
-    "node": "20.x"
+    "start": "node server.js"
   },
   "dependencies": {
-    "body-parser": "^1.20.2",
+    "express": "^4.18.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "express": "^4.18.2",
-    "node-fetch": "^2.6.12",
+    "groq-sdk": "^0.3.3",
     "pdfkit": "^0.13.0",
-    "pdfkit-table": "^0.1.99",
-    "stripe": "^14.25.0",
-    "@google/generative-ai": "^0.2.1"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
+    "pdfkit-table": "^0.1.99"
   }
 }
